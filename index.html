@@ -135,6 +135,9 @@ button{font:inherit;color:inherit}
 @keyframes sway{from{transform:translateX(-20px) rotate(-30deg)}to{transform:translateX(20px) rotate(40deg)}}
 .bp{position:absolute;width:14px;height:17px;border-radius:62% 62% 50% 50%/72% 72% 38% 38%}
 
+.end-actions{display:flex;flex-wrap:wrap;gap:14px;justify-content:center}
+.tag:disabled{opacity:.7;cursor:progress}
+
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media (prefers-reduced-motion:reduce){
@@ -213,7 +216,11 @@ button{font:inherit;color:inherit}
     </div>
     <p class="lead fade d1">dari BSD, buat kamu</p>
     <p class="sign fade d2">— Shaka AKA Narin</p>
-    <button class="tag fade d3" id="again">baca lagi dari awal</button>
+    <div class="end-actions fade d3">
+      <button class="tag" id="again">baca lagi dari awal</button>
+      <button class="tag" id="saveVideo">simpan jadi video</button>
+    </div>
+    <p class="hint" id="vidHint" style="font-size:18px" aria-live="polite"></p>
   </section>
 </main>
 
@@ -367,6 +374,149 @@ button{font:inherit;color:inherit}
     var e2=$('toEnd'); e2.hidden=true; e2.classList.remove('show');
     var st=$('saveTip'); if(st) st.remove();
     go('s-env');
+  });
+  /* 5. simpan jadi video: gambar ulang ceritanya ke canvas lalu rekam */
+  var vidBtn=$('saveVideo'), vidHint=$('vidHint'), vidFile=null, recording=false;
+  function pickMime(){
+    if(!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
+    var list=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+    for(var i=0;i<list.length;i++){ try{ if(MediaRecorder.isTypeSupported(list[i])) return list[i]; }catch(e){} }
+    return '';
+  }
+  function makeFilm(){
+    var W=720, H=1280, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    var c=cv.getContext('2d');
+    var imgEnv=document.querySelector('.env-card img'), imgFront=document.querySelector('.pc-front img'), imgBack=document.querySelector('.pc-back img');
+    var imgCover=cover.querySelector('img'), imgPages=pages.map(function(p){return p.querySelector('img')});
+    var HAND="'Caveat',cursive", JP="'Klee One',sans-serif", SERIF="'Cormorant Garamond',Georgia,serif";
+    var INK='#2F3A58', SOFT='#56627F', VIOLET='#8466AD', PAPER='#FBF8F1';
+    var petals=[];
+    for(var i=0;i<22;i++) petals.push({x:Math.random()*W, s:14+Math.random()*16, d:7+Math.random()*7, o:Math.random(), sw:1.6+Math.random()*2, c:colors[i%colors.length]});
+    function ease(x){ x=Math.max(0,Math.min(1,x)); return 1-Math.pow(1-x,3); }
+    function clamp(x){ return Math.max(0,Math.min(1,x)); }
+    function rr(x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+    function photo(img,cx,cy,w,h,rot,sx,alpha){
+      c.save(); c.globalAlpha*=alpha==null?1:alpha; c.translate(cx,cy); c.rotate(rot||0); c.scale(sx==null?1:sx,1);
+      c.shadowColor='rgba(40,50,90,.35)'; c.shadowBlur=40; c.shadowOffsetY=18;
+      rr(-w/2,-h/2,w,h,6); c.fillStyle=PAPER; c.fill(); c.shadowColor='transparent';
+      c.clip(); c.drawImage(img,-w/2,-h/2,w,h); c.restore();
+    }
+    function text(str,x,y,font,color,rot){
+      c.save(); c.translate(x,y); c.rotate(rot||0); c.font=font; c.fillStyle=color; c.textAlign='center'; c.textBaseline='middle'; c.fillText(str,0,0); c.restore();
+    }
+    function bg(t){
+      var g=c.createLinearGradient(0,0,0,H); g.addColorStop(0,'#BCD5F1'); g.addColorStop(1,'#F2F6FB');
+      c.fillStyle=g; c.fillRect(0,0,W,H);
+      petals.forEach(function(p){
+        var k=((t/p.d)+p.o)%1, sway=Math.sin(t*Math.PI/p.sw+p.o*9);
+        c.save(); c.globalAlpha=.75; c.translate(p.x+sway*22, -60+k*(H+120)); c.rotate(sway*.6);
+        c.fillStyle=p.c; c.beginPath(); c.ellipse(0,0,p.s/2,p.s*.62,0,0,Math.PI*2); c.fill(); c.restore();
+      });
+    }
+    // tiap adegan: [mulai, selesai, gambar(waktuLokal)]
+    var scenes=[
+      [0,4,function(t){
+        text('ada kiriman dari BSD',W/2,300-18*(1-ease(t/.8)),'600 68px '+HAND,INK);
+        photo(imgEnv,W/2,640+90*(1-ease(t/1.1)),600,400,-.02*(1-ease(t/1.1))-.012,1,ease(t/.6));
+        c.globalAlpha*=ease((t-.9)/.6);
+        text('untuk: Matcshaaaaa',W/2,940,'600 56px '+HAND,INK,-.03);
+        text('日本',W/2,1010,'600 30px '+JP,SOFT);
+      }],
+      [3.6,10.4,function(t){
+        var f=clamp((t-3.2)/.9), sx=Math.abs(Math.cos(f*Math.PI));
+        photo(f<.5?imgFront:imgBack,W/2,600+80*(1-ease(t/1)),640,427,-.02*(1-ease(t/1)),Math.max(sx,.001),ease(t/.5));
+        text(f<.5?'kartu pos dari BSD':'baliknya…',W/2,960,'600 44px '+HAND,SOFT);
+      }],
+      [10,23.4,function(t){
+        var W2=540, H2=960, cx=W/2, cy=H/2+10, rots=[-.026,.042,-.056,.028];
+        var step=2.2, first=2.8, k=Math.floor((t-first)/step), local=(t-first)-k*step;
+        for(var i=imgPages.length-1;i>=0;i--){
+          if(t>=first && i<k) continue;
+          var dx=0, rot=rots[i], y=i*5;
+          if(t>=first && i===k && k<imgPages.length-1 && local>step-.5){ var q=ease((local-(step-.5))/.5); dx=-q*W*1.2; rot-=q*.35; }
+          photo(imgPages[i],cx+dx,cy+y,W2,H2,rot,1,ease(t/.5));
+        }
+        var o=clamp((t-1.6)/1);
+        if(o<1){
+          c.save(); c.globalAlpha*=1-clamp((t-2.3)/.35); c.translate(cx-W2/2,0); photo(imgCover,W2/2*Math.cos(o*Math.PI*.64),cy,W2,H2,0,Math.max(Math.cos(o*Math.PI*.64),.001),ease(t/.5)); c.restore();
+        }
+      }],
+      [23,28.5,function(t){
+        c.save(); c.translate(W/2,470); c.rotate(-.14);
+        var s=t<.35?1.9:1.9-.9*ease((t-.35)/.6); c.scale(s,s); c.globalAlpha*=clamp((t-.35)/.3);
+        c.strokeStyle=VIOLET; c.fillStyle=VIOLET;
+        c.lineWidth=6; c.beginPath(); c.arc(0,0,190,0,Math.PI*2); c.stroke();
+        c.lineWidth=3; c.beginPath(); c.arc(0,0,108,0,Math.PI*2); c.stroke();
+        var ring='BSD ✿ 27.IX.26 ✿ ID — JP ✿ BSD ✿ 2026 ✿ ';
+        c.font='30px Georgia,serif'; c.textAlign='center'; c.textBaseline='middle';
+        for(var i=0;i<ring.length;i++){ c.save(); c.rotate(i/ring.length*Math.PI*2); c.fillText(ring[i],0,-148); c.restore(); }
+        c.font='600 54px '+JP; c.fillText('花の季節',0,-10);
+        c.font='italic 30px '+SERIF; c.fillText('flower season',0,44);
+        c.restore();
+        c.save(); c.globalAlpha*=ease((t-1)/.8); text('dari BSD, buat kamu',W/2,820+10*(1-ease((t-1)/.8)),'600 68px '+HAND,INK); c.restore();
+        c.save(); c.globalAlpha*=ease((t-1.6)/.8); text('— Shaka AKA Narin',W/2,920,'600 60px '+HAND,INK,-.05); c.restore();
+      }]
+    ];
+    var total=28.5;
+    function frame(t){
+      c.setTransform(1,0,0,1,0,0); c.globalAlpha=1; bg(t);
+      scenes.forEach(function(s){
+        if(t<s[0]||t>s[1]) return;
+        c.save(); c.globalAlpha=Math.min(clamp((t-s[0])/.4), s[1]>=total?1:clamp((s[1]-t)/.4)); s[2](t-s[0]); c.restore();
+      });
+    }
+    return {canvas:cv, frame:frame, total:total};
+  }
+  function loadFonts(){
+    if(!document.fonts || !document.fonts.load) return Promise.resolve();
+    return Promise.all([
+      document.fonts.load("600 60px 'Caveat'"),
+      document.fonts.load("600 40px 'Klee One'",'花の季節日本'),
+      document.fonts.load("italic 400 30px 'Cormorant Garamond'")
+    ]).catch(function(){});
+  }
+  function deliver(){
+    if(!vidFile) return;
+    var coarse=window.matchMedia && matchMedia('(pointer:coarse)').matches;
+    if(coarse && navigator.canShare && navigator.canShare({files:[vidFile]})){
+      navigator.share({files:[vidFile]}).catch(function(e){ if(e && e.name!=='AbortError') download(); });
+    } else download();
+  }
+  function download(){
+    var url=URL.createObjectURL(vidFile), a=document.createElement('a');
+    a.href=url; a.download=vidFile.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }
+  vidBtn.addEventListener('click',function(){
+    if(recording) return;
+    if(vidFile){ deliver(); return; }
+    var mime=pickMime();
+    if(mime===null){ vidHint.textContent='yah, browser ini belum bisa bikin video :('; return; }
+    recording=true; vidBtn.disabled=true; vidBtn.textContent='lagi bikin video…';
+    vidHint.textContent='tunggu sebentar ya, jangan pindah dari halaman ini';
+    loadFonts().then(function(){
+      var film=makeFilm(), stream=film.canvas.captureStream(30), chunks=[];
+      var rec=new MediaRecorder(stream, mime?{mimeType:mime, videoBitsPerSecond:6000000}:undefined);
+      rec.ondataavailable=function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop=function(){
+        stream.getTracks().forEach(function(tr){tr.stop()});
+        var type=rec.mimeType||mime||'video/webm', ext=/mp4/.test(type)?'mp4':'webm';
+        vidFile=new File([new Blob(chunks,{type:type.split(';')[0]})],'musim-bunga-dari-BSD.'+ext,{type:type.split(';')[0]});
+        recording=false; vidBtn.disabled=false; vidBtn.textContent='simpan videonya';
+        vidHint.textContent='videonya udah jadi ✿';
+      };
+      film.frame(0); rec.start(1000);
+      var t0=performance.now();
+      (function tick(){
+        var t=(performance.now()-t0)/1000;
+        film.frame(Math.min(t,film.total));
+        vidHint.textContent='tunggu sebentar ya… '+Math.min(99,Math.floor(t/film.total*100))+'%';
+        if(t<film.total+.2) requestAnimationFrame(tick); else rec.stop();
+      })();
+    }).catch(function(){
+      recording=false; vidBtn.disabled=false; vidBtn.textContent='simpan jadi video';
+      vidHint.textContent='gagal bikin video, coba lagi ya';
+    });
   });
 })();
 </script>
