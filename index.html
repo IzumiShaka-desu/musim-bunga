@@ -179,7 +179,10 @@ button{font:inherit;color:inherit}
       </div>
     </button>
     <p class="hint" id="cardHint">tap kartunya buat lihat baliknya</p>
-    <button class="tag" id="toZine" hidden>masih ada lagi</button>
+    <div class="end-actions">
+      <button class="tag" id="saveCard" hidden>simpan foto ini</button>
+      <button class="tag" id="toZine" hidden>masih ada lagi</button>
+    </div>
   </section>
 
   <!-- 3. zine -->
@@ -193,7 +196,10 @@ button{font:inherit;color:inherit}
     </div>
     <div class="deck-foot">
       <p class="hint" id="zineHint">tap sampulnya buat buka</p>
-      <button class="tag" id="toEnd" hidden>udah</button>
+      <div class="end-actions">
+        <button class="tag" id="savePage" hidden>simpan foto ini</button>
+        <button class="tag" id="toEnd" hidden>udah</button>
+      </div>
     </div>
   </section>
 
@@ -219,6 +225,7 @@ button{font:inherit;color:inherit}
     <div class="end-actions fade d3">
       <button class="tag" id="again">baca lagi dari awal</button>
       <button class="tag" id="saveVideo">simpan jadi video</button>
+      <button class="tag" id="savePhotos">simpan semua foto</button>
     </div>
     <p class="hint" id="vidHint" style="font-size:18px" aria-live="polite"></p>
   </section>
@@ -284,7 +291,7 @@ button{font:inherit;color:inherit}
     if(!flippedOnce){
       flippedOnce=true;
       $('cardHint').textContent='tap lagi buat balik ke depan';
-      setTimeout(function(){ var b=$('toZine'); b.hidden=false; b.classList.add('show'); }, reduce?0:900);
+      setTimeout(function(){ ['saveCard','toZine'].forEach(function(id){ var b=$(id); b.hidden=false; b.classList.add('show'); }); }, reduce?0:900);
     }
   });
   $('toZine').addEventListener('click',function(){ go('s-zine'); });
@@ -309,7 +316,7 @@ button{font:inherit;color:inherit}
   function openCover(){
     if(coverOpen) return; coverOpen=true; cover.classList.add('open');
     setTimeout(function(){ hint(); }, reduce?0:500);
-    setTimeout(function(){ var tip=document.createElement('p'); tip.className='hint'; tip.id='saveTip'; tip.style.fontSize='18px'; tip.textContent='tekan lama fotonya kalau mau disimpan jadi wallpaper'; if(!$('saveTip')) $('zineHint').after(tip); }, reduce?0:1600);
+    setTimeout(function(){ var b=$('savePage'); b.hidden=false; b.classList.add('show'); }, reduce?0:900);
   }
   cover.addEventListener('click',openCover);
   function toss(dir){
@@ -367,12 +374,11 @@ button{font:inherit;color:inherit}
     opened=false; env.className='envelope'; seal.className='seal';
     $('envHint').textContent='tap segelnya buat buka';
     card.classList.remove('flipped'); flippedOnce=false; $('cardHint').textContent='tap kartunya buat lihat baliknya';
-    var z=$('toZine'); z.hidden=true; z.classList.remove('show');
+    ['saveCard','toZine','savePage'].forEach(function(id){ var b=$(id); b.hidden=true; b.classList.remove('show'); });
     coverOpen=false; cover.classList.remove('open'); order=pages.slice(); shown=0; layout();
     pages.forEach(function(p){p.style.transform='';});
     $('zineHint').textContent='tap sampulnya buat buka';
     var e2=$('toEnd'); e2.hidden=true; e2.classList.remove('show');
-    var st=$('saveTip'); if(st) st.remove();
     go('s-env');
   });
   /* 5. simpan jadi video: gambar ulang ceritanya ke canvas lalu rekam */
@@ -542,21 +548,14 @@ button{font:inherit;color:inherit}
       document.fonts.load("italic 400 30px 'Cormorant Garamond'")
     ]).catch(function(){});
   }
-  function deliver(){
-    if(!vidFile) return;
-    var coarse=window.matchMedia && matchMedia('(pointer:coarse)').matches;
-    if(coarse && navigator.canShare && navigator.canShare({files:[vidFile]})){
-      navigator.share({files:[vidFile]}).catch(function(e){ if(e && e.name!=='AbortError') download(); });
-    } else download();
-  }
-  function download(){
-    var url=URL.createObjectURL(vidFile), a=document.createElement('a');
-    a.href=url; a.download=vidFile.name; document.body.appendChild(a); a.click(); a.remove();
+  function download(file){
+    var url=URL.createObjectURL(file), a=document.createElement('a');
+    a.href=url; a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
   }
   vidBtn.addEventListener('click',function(){
     if(recording) return;
-    if(vidFile){ deliver(); return; }
+    if(vidFile){ saveFiles([vidFile]); return; }
     var mime=pickMime();
     if(mime===null){ vidHint.textContent='yah, browser ini belum bisa bikin video :('; return; }
     recording=true; vidBtn.disabled=true; vidBtn.textContent='lagi bikin video…';
@@ -584,6 +583,59 @@ button{font:inherit;color:inherit}
       recording=false; vidBtn.disabled=false; vidBtn.textContent='simpan jadi video';
       vidHint.textContent='gagal bikin video, coba lagi ya';
     });
+  });
+
+  /* 6. simpan foto: satu-satu (kartu pos & zine) atau semuanya sekaligus */
+  function imgFile(img,name){
+    var src=img.src, bin=atob(src.slice(src.indexOf(',')+1)), u8=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    return new File([u8],name,{type:'image/jpeg'});
+  }
+  var crcTable=null;
+  function crc32(u8){
+    if(!crcTable){ crcTable=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; crcTable[n]=c>>>0; } }
+    var crc=0xFFFFFFFF; for(var i=0;i<u8.length;i++) crc=crcTable[(crc^u8[i])&255]^(crc>>>8);
+    return (crc^0xFFFFFFFF)>>>0;
+  }
+  // zip polos tanpa kompresi (jpg memang sudah terkompresi)
+  function makeZip(files,name){
+    return Promise.all(files.map(function(f){ return new Response(f).arrayBuffer(); })).then(function(bufs){
+      var parts=[], central=[], offset=0, enc=new TextEncoder();
+      bufs.forEach(function(buf,i){
+        var data=new Uint8Array(buf), fname=enc.encode(files[i].name), crc=crc32(data);
+        var lh=new DataView(new ArrayBuffer(30));
+        lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,0,true);
+        lh.setUint32(14,crc,true); lh.setUint32(18,data.length,true); lh.setUint32(22,data.length,true); lh.setUint16(26,fname.length,true);
+        var ch=new DataView(new ArrayBuffer(46));
+        ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true);
+        ch.setUint32(16,crc,true); ch.setUint32(20,data.length,true); ch.setUint32(24,data.length,true); ch.setUint16(28,fname.length,true); ch.setUint32(42,offset,true);
+        parts.push(lh.buffer,fname,data); central.push(ch.buffer,fname);
+        offset+=30+fname.length+data.length;
+      });
+      var size=central.reduce(function(s,p){return s+p.byteLength},0), end=new DataView(new ArrayBuffer(22));
+      end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true); end.setUint32(12,size,true); end.setUint32(16,offset,true);
+      return new File(parts.concat(central,[end.buffer]),name,{type:'application/zip'});
+    });
+  }
+  function saveFiles(files,zipName){
+    var coarse=window.matchMedia && matchMedia('(pointer:coarse)').matches;
+    var viaZip=function(){ if(files.length===1) download(files[0]); else makeZip(files,zipName).then(download); };
+    if(coarse && navigator.canShare && navigator.canShare({files:files})){
+      navigator.share({files:files}).catch(function(e){ if(e && e.name!=='AbortError') viaZip(); });
+    } else viaZip();
+  }
+  $('saveCard').addEventListener('click',function(){
+    var back=card.classList.contains('flipped');
+    saveFiles([imgFile(document.querySelector(back?'.pc-back img':'.pc-front img'),'kartu-pos-'+(back?'belakang':'depan')+'.jpg')]);
+  });
+  $('savePage').addEventListener('click',function(){
+    var top=order[0];
+    saveFiles([imgFile(top.querySelector('img'),'zine-halaman-'+(pages.indexOf(top)+1)+'.jpg')]);
+  });
+  $('savePhotos').addEventListener('click',function(){
+    var list=[imgFile(document.querySelector('.pc-front img'),'1-kartu-pos-depan.jpg'), imgFile(document.querySelector('.pc-back img'),'2-kartu-pos-belakang.jpg'), imgFile(cover.querySelector('img'),'3-zine-sampul.jpg')];
+    pages.forEach(function(p,i){ list.push(imgFile(p.querySelector('img'),(4+i)+'-zine-halaman-'+(i+1)+'.jpg')); });
+    saveFiles(list,'musim-bunga-dari-BSD.zip');
   });
 })();
 </script>
